@@ -1,13 +1,15 @@
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
+import javax.xml.transform.dom.*;
+import javax.xml.transform.*;
+import org.w3c.dom.*;
+import javax.xml.transform.stream.StreamResult;
 import java.net.URL;
 
 class SimpleHamr extends Object {
 
+    public static Document doc = null;
     public static final String OAI_BASE = "http://www.datadryad.org/oai/request?verb=GetRecord&identifier=oai:datadryad.org:";
     public static final String OAI_APPEND = "&metadataPrefix=oai_dc";
     private static final String CROSSREF_URL = "http://api.labs.crossref.org/";
@@ -88,15 +90,90 @@ class SimpleHamr extends Object {
 	return p[n];
     }
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+       Initialize the class doc variable with an XML document.
+    **/
+    public static void initXMLdoc() throws Exception {
+	DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        DOMImplementation impl = builder.getDOMImplementation();
+
+	doc = impl.createDocument(null,null,null);
+    }
+    
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+       Transform the XML doc to a String and print it out.
+    **/
+    public static void outputXMLdoc() throws Exception {
+        // transform the Document into a String
+        DOMSource domSource = new DOMSource(doc);
+        TransformerFactory tf = TransformerFactory.newInstance();
+        Transformer transformer = tf.newTransformer();
+        transformer.setOutputProperty(OutputKeys.METHOD, "xml");
+        transformer.setOutputProperty(OutputKeys.ENCODING,"UTF-8");
+        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
+        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        java.io.StringWriter sw = new java.io.StringWriter();
+        StreamResult sr = new StreamResult(sw);
+        transformer.transform(domSource, sr);
+        String xml = sw.toString();
+
+	System.out.println(xml);
+
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+       Compute the match score between two values.
+     **/
+    public static double getMatchScore(String obj1, String obj2) {
+	int distance = getLevenshteinDistance(obj1, obj2);
+	System.out.println("distance = " + distance);
+	double match = 1.0 - ((double)distance / (double)(Math.max(obj1.length(), obj2.length())));
+	
+	System.out.println("match is " + match);
+	return match;
+    }
 
     
     ///////////////////////////////////////////////////////////////////////////////////////////////////////
     /**
-       Takes a single command line argument, which is the ID of a Dryad item to retrieve.
+       Match two strings, and append the resultant XML to the doc.
+     **/
+    public static void generateMatchXML(String docstr, String authstr, String fieldName) throws Exception {
+
+	double match = getMatchScore(docstr, authstr);
+
+        Element matchElem = doc.createElement("match");
+        doc.appendChild(matchElem);
+        matchElem.setAttribute("strength", "" + match);
+        matchElem.setAttribute("fieldName", "" + fieldName);
+	
+        Element docitem = doc.createElement("user");
+        matchElem.appendChild(docitem);
+	Text docText = doc.createTextNode(docstr);
+	docitem.appendChild(docText);
+
+	Element authitem = doc.createElement("auth");
+        matchElem.appendChild(authitem);
+	Text authText = doc.createTextNode(authstr);
+	authitem.appendChild(authText);
+    }
+
+    
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+       Main entry point for the simple HAMR. Takes a single command line argument, which is the
+       ID of a Dryad item to retrieve.
 
        For example, java SimpleHamr "10255/dryad.20"
      **/
     public static void main(String[] args) throws Exception {
+	initXMLdoc();
+
 	// get a Dryad ID
 	String itemID = args[0];
 	System.out.println("processing " + itemID);
@@ -106,20 +183,16 @@ class SimpleHamr extends Object {
 	System.out.println("retrieving " + accessURL);
 	DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 	DocumentBuilder db = dbf.newDocumentBuilder();
-	Document doc = db.parse(new URL(accessURL).openStream());
-
-	NodeList nl = doc.getElementsByTagName("dc:title");
-	String doctitle = nl.item(0).getTextContent();
-	System.out.println("doctitle " + doctitle);
+	Document userdoc = db.parse(new URL(accessURL).openStream());
 	
 	// extract its DOI
-	nl = doc.getElementsByTagName("dc:relation");
+	NodeList nl = userdoc.getElementsByTagName("dc:relation");
 	String targetDOI = null;
 	for(int i=0; i < nl.getLength(); i++){
 	    String rel = nl.item(i).getTextContent();
 	    System.out.println("relation " + rel);
 	    if (rel.startsWith("doi")) {
-		targetDOI = rel.substring(4); // skip "doi:"
+		targetDOI = rel.substring("doi:".length()); // skip "doi:"
 	    }
 	}
 	System.out.println("doi is " + targetDOI);
@@ -131,19 +204,21 @@ class SimpleHamr extends Object {
 	DocumentBuilder authdb = authdbf.newDocumentBuilder();
 	Document authdoc = authdb.parse(new URL(authURL).openStream());
 
-	nl = authdoc.getElementsByTagName("title");
-	String authtitle = nl.item(0).getTextContent();
+	// compute title match
+	NodeList titles = userdoc.getElementsByTagName("dc:title");
+	String doctitle = titles.item(0).getTextContent().substring("Data from: ".length()); // remove the Data from:
+	System.out.println("doctitle " + doctitle);
+	
+	NodeList authtitles = authdoc.getElementsByTagName("title");
+	String authtitle = authtitles.item(0).getTextContent();
 	System.out.println("authtitle " + authtitle);
 	
-	// match fields, and create the output XML format
-	int distance = getLevenshteinDistance(doctitle, authtitle);
-	System.out.println("distance = " + distance);
-	double match = 1.0 - ((double)distance / (double)(Math.max(doctitle.length(),authtitle.length())));
-	
-	System.out.println("match of doctitle and authtitle is " + match);
-	
-	// render the XML into pretty HTML
+	generateMatchXML(doctitle, authtitle, "dc:title");
 
+
+	// render the XML into pretty HTML	
+	outputXMLdoc();
+	
 	// display
 	
     }
