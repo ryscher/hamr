@@ -11,7 +11,11 @@ class SimpleHamr extends Object {
 
 	// get the corresponding record from crossref
 
-	// match fields, and add 
+	// match fields, and create the output XML format
+
+	// render the XML into pretty HTML
+
+	// display
 	
     }
 }
