@@ -10,6 +10,7 @@ class SimpleHamr extends Object {
 
     public static final String OAI_BASE = "http://www.datadryad.org/oai/request?verb=GetRecord&identifier=oai:datadryad.org:";
     public static final String OAI_APPEND = "&metadataPrefix=oai_dc";
+    private static final String CROSSREF_URL = "http://api.labs.crossref.org/";
 
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -34,9 +35,28 @@ class SimpleHamr extends Object {
 	System.out.println("retrieved " + nl.item(0).getTextContent());
 	
 	// extract its DOI
+	nl = doc.getElementsByTagName("dc:relation");
+	String targetDOI = null;
+	for(int i=0; i < nl.getLength(); i++){
+	    String rel = nl.item(i).getTextContent();
+	    System.out.println("relation " + rel);
+	    if (rel.startsWith("doi")) {
+		targetDOI = rel.substring(4); // skip "doi:"
+	    }
+	}
+	System.out.println("doi is " + targetDOI);
 
 	// get the corresponding record from crossref
+	String authURL = CROSSREF_URL + targetDOI + ".xml";
+	System.out.println("retrieving " + authURL);
+	DocumentBuilderFactory authdbf = DocumentBuilderFactory.newInstance();
+	DocumentBuilder authdb = authdbf.newDocumentBuilder();
+	Document authdoc = authdb.parse(new URL(authURL).openStream());
 
+	nl = authdoc.getElementsByTagName("title");
+	System.out.println("retrieved " + nl.item(0).getTextContent());
+	
+	
 	// match fields, and create the output XML format
 
 	// render the XML into pretty HTML
